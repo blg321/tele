@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: mothbot
+    env: python
+    region: oregon  # Choose closest to you
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false  # This means you'll set it manually in dashboard
+    autoDeploy: true  # Auto-deploy when you push to GitHub
