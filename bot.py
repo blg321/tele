@@ -1,5 +1,4 @@
 import os
-import asyncio
 from flask import Flask
 from threading import Thread
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -16,17 +15,10 @@ def run_flask():
     app_flask.run(host='0.0.0.0', port=10000)
 
 # ===== BOT CONFIGURATION =====
-# IMPORTANT: Use environment variable, never hardcode tokens!
-BOT_TOKEN = os.environ.get('BOT_TOKEN')
-
-if not BOT_TOKEN:
-    print("WARNING: No BOT_TOKEN found!")
-    print("Using fallback token - INSECURE FOR PRODUCTION!")
-    BOT_TOKEN = "8933546826:AAEAKQ3JRicYgI0UCZ8YxvcR-7NKb12BYDE"  # Replace or better use environment variable
+BOT_TOKEN = os.environ.get('BOT_TOKEN', '8933546826:AAEAKQ3JRicYgI0UCZ8YxvcR-7NKb12BYDE')
 
 # ===== COMMAND HANDLERS =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a message when /start is issued."""
     welcome_message = (
         "🦋 *M0THB0T is online!*\n\n"
         "Hey there! I'm your friendly neighborhood moth bot.\n"
@@ -35,7 +27,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
 async def whatis(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Respond with bot description."""
     bot_description = (
         "🦋 *M0THB0T*\n\n"
         "*Created by:* @MOTHHHHHHHHHH\n"
@@ -50,7 +41,6 @@ async def whatis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(bot_description, parse_mode='Markdown')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send a message when /help is issued."""
     help_text = (
         "🦋 *M0THB0T Commands*\n\n"
         "/start - Wake up the bot\n"
@@ -60,37 +50,22 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Log errors."""
-    print(f"Update {update} caused error {context.error}")
-
 # ===== MAIN FUNCTION =====
-async def main():
-    """Start the bot."""
-    # Start Flask in a separate thread
+def main():
     flask_thread = Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     print("Flask keep-alive server started on port 10000")
     
-    # Create application
     app = Application.builder().token(BOT_TOKEN).build()
-    
-    # Add command handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("whatis", whatis))
     app.add_handler(CommandHandler("help", help_command))
     
-    # Add error handler
-    app.add_error_handler(error_handler)
-    
-    # Start bot
     print("🦋 M0THB0T is starting...")
     print("Bot is now running 24/7!")
-    
-    # Run the bot
-    await app.run_polling(allowed_updates=Update.ALL_TYPES)
+    app.run_polling(allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == "__main__":
     print("Initializing M0THB0T...")
-    asyncio.run(main())
+    main()
