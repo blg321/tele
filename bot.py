@@ -15,7 +15,9 @@ def run_flask():
     app_flask.run(host='0.0.0.0', port=10000)
 
 # ===== BOT CONFIGURATION =====
-BOT_TOKEN = "8933546826:AAEe8PThbqVhHzYQwEghQ3FIaJ6vnP4cA1E"
+BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+if not BOT_TOKEN:
+    raise ValueError("TELEGRAM_BOT_TOKEN environment variable not set!")
 
 # ===== COMMAND HANDLERS =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
