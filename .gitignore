@@ -1,0 +1,26 @@
+# Environment variables
+.env
+config.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+instance/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sensitive
+*_token*
+*_secret*
