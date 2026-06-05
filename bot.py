@@ -28,21 +28,21 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def whatis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_description = (
-        "🦋 *M0THB0T*\n\n"
+        "*M0THB0T*\n\n"
         "*Created by:* @MOTHHHHHHHHHH\n"
         "*Status:* 🚧 In Development\n\n"
         "*About:* M0THB0T is a custom Telegram bot designed to "
         "bring fun and useful features to your chats. Currently "
         "being developed with new features coming soon!\n\n"
-        "*Version:* 1.0 Beta\n"
-        "*Bot Type:* Utility & Fun\n\n"
-        "Stay tuned for updates! 🦋✨"
+        "*Version:* 1.1 Beta\n"
+        "*Bot Type:* Utility\n\n"
+        "Stay tuned for updates! 🙀🍻"
     )
     await update.message.reply_text(bot_description, parse_mode='Markdown')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
-        "🦋 *M0THB0T Commands*\n\n"
+        "*M0THB0T Commands*\n\n"
         "/start - Wake up the bot\n"
         "/whatis - Learn about M0THB0T\n"
         "/help - Show this help message\n\n"
