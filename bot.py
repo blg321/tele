@@ -1,12 +1,8 @@
 import os
-from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
 from telegram.ext import Application, CommandHandler, ContextTypes
 from telegram import Update
-
-# Load .env file
-load_dotenv()
 
 # ===== FLASK FOR KEEPING ALIVE =====
 app_flask = Flask(__name__)
@@ -19,31 +15,28 @@ def run_flask():
     app_flask.run(host='0.0.0.0', port=10000)
 
 # ===== BOT CONFIGURATION =====
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-
-if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN not found! Create a .env file or set environment variable.")
+BOT_TOKEN = "8933546826:AAEe8PThbqVhHzYQwEghQ3FIaJ6vnP4cA1E"
 
 # ===== COMMAND HANDLERS =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_message = (
         "🦋 *M0THB0T is online!*\n\n"
-        "Hey there! Im M0THB0T"
+        "Hey there! I'm your friendly neighborhood moth bot.\n"
         "Use /whatis to learn more about me!"
     )
     await update.message.reply_text(welcome_message, parse_mode='Markdown')
 
 async def whatis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_description = (
-        "*M0THB0T*\n\n"
+        "🦋 *M0THB0T*\n\n"
         "*Created by:* @MOTHHHHHHHHHH\n"
         "*Status:* 🚧 In Development\n\n"
         "*About:* M0THB0T is a custom Telegram bot designed to "
         "bring fun and useful features to your chats. Currently "
         "being developed with new features coming soon!\n\n"
-        "*Version:* 1.1 Beta\n"
+        "*Version:* 1.0 Beta\n"
         "*Bot Type:* Utility & Fun\n\n"
-        "Stay tuned for updates! 🍻🙀"
+        "Stay tuned for updates! 🦋✨"
     )
     await update.message.reply_text(bot_description, parse_mode='Markdown')
 
