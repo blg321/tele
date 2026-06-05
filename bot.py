@@ -28,7 +28,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def whatis(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bot_description = (
-        "🦋 *M0THB0T*\n\n"
+        "*M0THB0T*\n\n"
         "*Created by:* @MOTHHHHHHHHHH\n"
         "*Status:* 🚧 In Development\n\n"
         "*About:* M0THB0T is a custom Telegram bot designed to "
@@ -36,7 +36,7 @@ async def whatis(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "being developed with new features coming soon!\n\n"
         "*Version:* 1.0 Beta\n"
         "*Bot Type:* Utility & Fun\n\n"
-        "Stay tuned for updates! 🦋✨"
+        "Stay tuned for updates! 🦋🍻🙀"
     )
     await update.message.reply_text(bot_description, parse_mode='Markdown')
 
