@@ -1,7 +1,9 @@
 import os
 import json
 import asyncio
+import threading
 from datetime import datetime
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
@@ -9,7 +11,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "PUT_BOT_TOKEN_HERE_IF_NO_ENV")
 
 AUTHORIZED_USERS = {
-    6539961810,     # Your ID (example: 123456789)
+    6539961810,     # Your ID
     # Add 3 test user IDs below when you have them
     # 987654321,
     # 555111222,
@@ -22,6 +24,31 @@ STATE_FILE = "bot_state.json"
 
 # Global variables
 bot_mode = "normal"  # normal, silence, lockdown
+
+# ========== HEALTH SERVER FOR RENDER (NO MORE PORT ISSUES) ==========
+class HealthHandler(BaseHTTPRequestHandler):
+    """Simple HTTP handler that keeps Render happy"""
+    
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
+    
+    def log_message(self, format, *args):
+        # Suppress HTTP server logs (keeps console clean)
+        pass
+
+def run_health_server():
+    """Run a minimal HTTP server on Render's expected port"""
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
+
+# Start the health server in a background thread
+health_thread = threading.Thread(target=run_health_server, daemon=True)
+health_thread.start()
+# ===================================================================
 
 def load_state():
     """Load bot mode from file"""
@@ -217,6 +244,7 @@ def main():
     print(f"🤖 Bot starting...")
     print(f"📊 Initial mode: {bot_mode}")
     print(f"👥 Authorized users: {len(AUTHORIZED_USERS)}")
+    print(f"🌐 Health server running on port {os.environ.get('PORT', 10000)}")
     
     app.run_polling()
 
