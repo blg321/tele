@@ -12,6 +12,8 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "PUT_BOT_TOKEN_HERE_IF_NO_ENV")
 
 AUTHORIZED_USERS = {
     6539961810,     # Your ID
+    8924961685,     # Added user
+    7692122363,     # Added user
     # Add 3 test user IDs below when you have them
     # 987654321,
     # 555111222,
