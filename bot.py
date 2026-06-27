@@ -1,4 +1,5 @@
-import telebot
+import discord
+from discord.ext import commands
 import socket
 import os
 import hashlib
@@ -10,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ─── Configuration ─────────────────────────────
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+DISCORD_TOKEN = os.getenv("DISCORD_TOKEN")
 SHARED_SECRET = os.getenv("SHARED_SECRET")
 ADMIN_ID_STR = os.getenv("ADMIN_ID", "")
 
@@ -20,32 +21,31 @@ for uid in ADMIN_ID_STR.split(","):
     if uid:
         AUTHORIZED_USERS.append(int(uid))
 
-# Rate limiting
 REQUEST_LOG = {}
 MAX_REQUESTS = 5
 RATE_WINDOW = 60
 
-# Failed auth tracking
 FAILED_ATTEMPTS = {}
 MAX_FAILED = 5
 LOCKOUT_MINUTES = 30
 
-# GeoIP - pure local, zero network
 GEO_READER = None
 try:
     import geoip2.database
     GEO_READER = geoip2.database.Reader("./GeoLite2-City.mmdb")
-    print("[✓] GeoIP database loaded (local, no external requests)")
+    print("[✓] GeoIP database loaded")
 except ImportError:
     print("[!] geoip2 not installed")
 except FileNotFoundError:
-    print("[!] GeoLite2-City.mmdb not found in project directory")
+    print("[!] GeoLite2-City.mmdb not found")
 except Exception as e:
     print(f"[!] GeoIP init error: {e}")
 
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode="HTML")
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-# ─── Security Checks ───────────────────────────
+# ─── Security ──────────────────────────────────
 
 def is_authorized(user_id):
     return user_id in AUTHORIZED_USERS
@@ -54,22 +54,15 @@ def check_rate_limit(user_id):
     now = time.time()
     if user_id not in REQUEST_LOG:
         REQUEST_LOG[user_id] = []
-    
-    REQUEST_LOG[user_id] = [
-        t for t in REQUEST_LOG[user_id]
-        if now - t < RATE_WINDOW
-    ]
-    
+    REQUEST_LOG[user_id] = [t for t in REQUEST_LOG[user_id] if now - t < RATE_WINDOW]
     if len(REQUEST_LOG[user_id]) >= MAX_REQUESTS:
         return True
-    
     REQUEST_LOG[user_id].append(now)
     return False
 
 def is_locked_out(user_id):
     if user_id not in FAILED_ATTEMPTS:
         return False
-    
     count, first_time = FAILED_ATTEMPTS[user_id]
     if count >= MAX_FAILED:
         if time.time() - first_time < LOCKOUT_MINUTES * 60:
@@ -98,14 +91,11 @@ def verify_hmac(message_text, timestamp, received_hash):
     ).hexdigest()
     return hmac.compare_digest(expected, received_hash)
 
-# ─── IP Functions (all local) ──────────────────
+# ─── IP Functions ──────────────────────────────
 
 def validate_ip(ip):
-    try:
-        parsed = ip_address(ip.strip())
-        return str(parsed)
-    except ValueError:
-        raise ValueError(f"Invalid IP: {ip}")
+    parsed = ip_address(ip.strip())
+    return str(parsed)
 
 def is_private_ip(ip):
     try:
@@ -116,7 +106,6 @@ def is_private_ip(ip):
 def get_geo(ip):
     if not GEO_READER:
         return {"error": "GeoIP database not loaded"}
-
     try:
         response = GEO_READER.city(ip)
         return {
@@ -130,7 +119,7 @@ def get_geo(ip):
             "timezone": response.location.time_zone or "Unknown"
         }
     except geoip2.errors.AddressNotFoundError:
-        return {"error": "IP not found in database"}
+        return {"error": "IP not in database"}
     except Exception as e:
         return {"error": f"Lookup error: {e}"}
 
@@ -138,183 +127,153 @@ def get_rdns(ip):
     try:
         return socket.gethostbyaddr(ip)[0]
     except socket.herror:
-        return "No PTR record found"
+        return "No PTR record"
     except Exception:
         return "DNS lookup failed"
 
-# ─── Bot Commands ──────────────────────────────
-
-@bot.message_handler(commands=['start'])
-def start(message):
-    if not is_authorized(message.from_user.id):
-        return
-    bot.reply_to(message, "Bot online. /lookup [ip] | /hmac [cmd] [ts] [hash] | /auth")
-
-@bot.message_handler(commands=['lookup'])
-def ip_lookup(message):
-    user_id = message.from_user.id
-
+async def security_check(interaction: discord.Interaction):
+    user_id = interaction.user.id
     if not is_authorized(user_id):
-        return
-
+        await interaction.response.send_message("❌ Not authorized.", ephemeral=True)
+        return True
     if is_locked_out(user_id):
-        bot.reply_to(message, "🔒 Locked out. Try again later.")
-        return
-
+        await interaction.response.send_message("🔒 Locked out.", ephemeral=True)
+        return True
     if check_rate_limit(user_id):
-        bot.reply_to(message, "⏳ Rate limit reached. Wait 60s.")
-        return
+        await interaction.response.send_message("⏳ Rate limit. Wait 60s.", ephemeral=True)
+        return True
+    return False
 
-    parts = message.text.split()
-    if len(parts) != 2:
-        bot.reply_to(message, "<b>Usage:</b> <code>/lookup 8.8.8.8</code>")
-        return
+# ─── Events ────────────────────────────────────
 
-    ip = parts[1]
+@bot.event
+async def on_ready():
+    print(f"[✓] Logged in as {bot.user}")
+    print(f"[✓] Authorized users: {len(AUTHORIZED_USERS)}")
+    print(f"[✓] GeoIP: {'Loaded' if GEO_READER else 'Missing'}")
+    print(f"[✓] Rate limit: {MAX_REQUESTS}/{RATE_WINDOW}s")
+    print(f"[✓] HMAC lockout: {MAX_FAILED} fails = {LOCKOUT_MINUTES}min")
+    print("[✓] Runtime network: ZERO external requests")
+    try:
+        synced = await bot.tree.sync()
+        print(f"[✓] Slash commands synced: {len(synced)}")
+    except Exception as e:
+        print(f"[!] Sync error: {e}")
+
+# ─── Slash Commands ────────────────────────────
+
+@bot.tree.command(name="lookup", description="Lookup IP geolocation and reverse DNS")
+async def lookup(interaction: discord.Interaction, ip: str):
+    if await security_check(interaction):
+        return
 
     try:
         ip = validate_ip(ip)
     except ValueError:
-        bot.reply_to(message, "❌ Invalid IP address.")
+        await interaction.response.send_message("❌ Invalid IP address.", ephemeral=True)
         return
 
     private = is_private_ip(ip)
     geo_data = get_geo(ip)
     rdns = get_rdns(ip)
 
-    lines = [f"<b>IP:</b> <code>{ip}</code>"]
-
-    if private:
-        lines.append("<b>Type:</b> 🔒 Private/Internal")
+    embed = discord.Embed(title=f"IP Lookup: `{ip}`", color=0x00ff00)
+    embed.add_field(name="Type", value="🔒 Private/Internal" if private else "🌐 Public", inline=False)
 
     if "error" not in geo_data:
-        lines.extend([
-            f"<b>City:</b> {geo_data['city']}",
-            f"<b>Region:</b> {geo_data['region']}",
-            f"<b>Country:</b> {geo_data['country']}",
-            f"<b>Continent:</b> {geo_data['continent']}",
-            f"<b>Postal:</b> {geo_data['postal']}",
-            f"<b>Timezone:</b> {geo_data['timezone']}",
-            f"<b>Coordinates:</b> {geo_data['lat']}, {geo_data['lon']}"
-        ])
+        embed.add_field(name="City", value=geo_data["city"], inline=True)
+        embed.add_field(name="Region", value=geo_data["region"], inline=True)
+        embed.add_field(name="Country", value=geo_data["country"], inline=True)
+        embed.add_field(name="Continent", value=geo_data["continent"], inline=True)
+        embed.add_field(name="Postal Code", value=geo_data["postal"], inline=True)
+        embed.add_field(name="Timezone", value=geo_data["timezone"], inline=True)
+        embed.add_field(name="Coordinates", value=f"{geo_data['lat']}, {geo_data['lon']}", inline=True)
     else:
-        lines.append(f"<b>Geo:</b> {geo_data['error']}")
+        embed.add_field(name="Geo Error", value=geo_data["error"], inline=False)
 
-    lines.append(f"<b>Reverse DNS:</b> {rdns}")
+    embed.add_field(name="Reverse DNS", value=rdns, inline=False)
+    embed.set_footer(text="Local DB lookup • No external requests")
 
-    bot.reply_to(message, "\n".join(lines))
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
-@bot.message_handler(commands=['hmac'])
-def hmac_command(message):
-    user_id = message.from_user.id
-
-    if not is_authorized(user_id):
+@bot.tree.command(name="hmac", description="Execute HMAC-authenticated command")
+async def hmac_cmd(interaction: discord.Interaction, command: str, timestamp: str, hmac_hash: str):
+    if await security_check(interaction):
         return
-
-    if is_locked_out(user_id):
-        bot.reply_to(message, "🔒 Locked out due to failed attempts.")
-        return
-
-    parts = message.text.split()
-    if len(parts) != 4:
-        record_failed_attempt(user_id)
-        bot.reply_to(message, "❌ Invalid auth format.")
-        return
-
-    command = parts[1]
-    timestamp = parts[2]
-    provided_hmac = parts[3]
 
     try:
         ts = int(timestamp)
-        now = int(time.time())
-        if abs(now - ts) > 30:
-            record_failed_attempt(user_id)
-            bot.reply_to(message, "⏰ Request expired. Regenerate HMAC.")
+        if abs(int(time.time()) - ts) > 30:
+            record_failed_attempt(interaction.user.id)
+            await interaction.response.send_message("⏰ Request expired. Regenerate HMAC.", ephemeral=True)
             return
     except ValueError:
-        record_failed_attempt(user_id)
-        bot.reply_to(message, "❌ Invalid timestamp.")
+        record_failed_attempt(interaction.user.id)
+        await interaction.response.send_message("❌ Invalid timestamp.", ephemeral=True)
         return
 
-    if not verify_hmac(command, timestamp, provided_hmac):
-        record_failed_attempt(user_id)
-        bot.reply_to(message, "🔑 Authentication failed.")
+    if not verify_hmac(command, timestamp, hmac_hash):
+        record_failed_attempt(interaction.user.id)
+        await interaction.response.send_message("🔑 Authentication failed.", ephemeral=True)
         return
 
-    bot.reply_to(
-        message,
-        f"✅ HMAC verified.\n"
-        f"<b>Command:</b> <code>{command}</code>\n"
-        f"<i>(Execution logic goes here)</i>"
+    await interaction.response.send_message(
+        f"✅ HMAC verified.\n**Command:** `{command}`\n*Add execution logic here*",
+        ephemeral=True
     )
 
-@bot.message_handler(commands=['auth'])
-def auth_help(message):
-    if not is_authorized(message.from_user.id):
+@bot.tree.command(name="auth", description="Show HMAC generation instructions")
+async def auth_help(interaction: discord.Interaction):
+    if await security_check(interaction):
         return
 
-    help_text = """
-<b>🔐 Generate HMAC locally:</b>
+    embed = discord.Embed(title="🔐 HMAC Generation", color=0x3498db)
+    embed.description = "Generate HMAC locally — never share your secret."
 
-<b>Python:</b>
-<code>import hmac, hashlib, time
-secret = "YOUR_SECRET"
-cmd = "status"
-ts = str(int(time.time()))
-h = hmac.new(secret.encode(), f"{cmd}:{ts}".encode(), hashlib.sha256).hexdigest()
-print(f"/hmac {cmd} {ts} {h}")</code>
+    embed.add_field(
+        name="Python",
+        value="```py\nimport hmac, hashlib, time\nS = \"YOUR_SECRET\"\nc = \"status\"\nt = str(int(time.time()))\nh = hmac.new(S.encode(), f\"{c}:{t}\".encode(), hashlib.sha256).hexdigest()\nprint(f\"/hmac {c} {t} {h}\")\n```",
+        inline=False
+    )
 
-<b>Bash:</b>
-<code>SECRET="YOUR_SECRET"
-CMD="status"
-TS=$(date +%s)
-H=$(echo -n "$CMD:$TS" | openssl dgst -sha256 -hmac "$SECRET" | cut -d' ' -f2)
-echo "/hmac $CMD $TS $H"</code>
-    """
-    bot.reply_to(message, help_text)
+    embed.add_field(
+        name="Bash",
+        value="```bash\nS=\"YOUR_SECRET\"\nC=\"status\"\nT=$(date +%s)\nH=$(echo -n \"$C:$T\" | openssl dgst -sha256 -hmac \"$S\" | cut -d' ' -f2)\necho \"/hmac $C $T $H\"\n```",
+        inline=False
+    )
 
-@bot.message_handler(commands=['health'])
-def health_check(message):
-    if not is_authorized(message.from_user.id):
+    embed.set_footer(text="HMAC expires 30 seconds after generation")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+@bot.tree.command(name="health", description="Check bot status")
+async def health(interaction: discord.Interaction):
+    if await security_check(interaction):
         return
-    status = "Loaded" if GEO_READER else "Missing"
-    bot.reply_to(message, f"✅ Online | GeoIP: {status} | 0 external requests")
 
-@bot.message_handler(func=lambda m: True)
-def catch_all(message):
-    if not is_authorized(message.from_user.id):
-        return
-    bot.reply_to(message, "Unknown command. /start for options.")
+    embed = discord.Embed(title="Bot Status", color=0x00ff00)
+    embed.add_field(name="Online", value="✅", inline=True)
+    embed.add_field(name="GeoIP Database", value="Loaded" if GEO_READER else "Missing", inline=True)
+    embed.add_field(name="External Requests", value="Zero", inline=True)
+    embed.add_field(name="Authorized Users", value=str(len(AUTHORIZED_USERS)), inline=True)
+    embed.add_field(name="Rate Limit", value=f"{MAX_REQUESTS}/{RATE_WINDOW}s", inline=True)
+    embed.add_field(name="HMAC Lockout", value=f"{MAX_FAILED} fails = {LOCKOUT_MINUTES}min", inline=True)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ─── Startup ───────────────────────────────────
 
-def validate_config():
+if __name__ == "__main__":
     errors = []
-
-    if not BOT_TOKEN:
-        errors.append("BOT_TOKEN not set")
+    if not DISCORD_TOKEN:
+        errors.append("DISCORD_TOKEN not set")
     if not SHARED_SECRET or len(SHARED_SECRET) < 32:
-        errors.append("SHARED_SECRET must be at least 32 characters")
+        errors.append("SHARED_SECRET must be >= 32 chars")
     if not AUTHORIZED_USERS:
         errors.append("ADMIN_ID not set")
-
     if errors:
         print("[!] Configuration errors:")
         for e in errors:
             print(f"    - {e}")
-        return False
-
-    print(f"[✓] Authorized users: {len(AUTHORIZED_USERS)}")
-    print(f"[✓] GeoIP: {'Loaded' if GEO_READER else 'Missing (local only, no API calls)'}")
-    print(f"[✓] Rate limit: {MAX_REQUESTS} req/{RATE_WINDOW}s")
-    print(f"[✓] HMAC lockout: {MAX_FAILED} fails = {LOCKOUT_MINUTES}min")
-    print("[✓] Network: ZERO external requests at runtime")
-    return True
-
-if __name__ == "__main__":
-    if not validate_config():
         exit(1)
 
-    print("[✓] Bot starting...")
-    bot.infinity_polling(timeout=30, long_polling_timeout=30)
+    print("[✓] Starting bot...")
+    bot.run(DISCORD_TOKEN)
