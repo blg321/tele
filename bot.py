@@ -9,8 +9,10 @@ import socket
 import ssl
 import urllib.parse
 import sys
+import threading
 from datetime import datetime
 from collections import Counter
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -20,27 +22,43 @@ import asyncio
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 ALLOWED_USER_ID = os.getenv('ALLOWED_USER_ID')
+PORT = int(os.getenv('PORT', 10000))  # Render provides this
 
 # Validate environment variables
 if not TOKEN:
-    print("❌ ERROR: DISCORD_TOKEN not found in environment variables!")
-    print("   Make sure you added it in Render's Environment tab")
+    print("❌ ERROR: DISCORD_TOKEN not found!")
     sys.exit(1)
 
 if not ALLOWED_USER_ID:
-    print("❌ ERROR: ALLOWED_USER_ID not found in environment variables!")
-    print("   Make sure you added it in Render's Environment tab")
+    print("❌ ERROR: ALLOWED_USER_ID not found!")
     sys.exit(1)
 
 try:
     ALLOWED_USER_ID = int(ALLOWED_USER_ID)
 except ValueError:
-    print(f"❌ ERROR: ALLOWED_USER_ID must be a number, got: {ALLOWED_USER_ID}")
+    print(f"❌ ERROR: ALLOWED_USER_ID must be a number!")
     sys.exit(1)
 
 print(f"✅ Configuration loaded")
 print(f"👤 Allowed User ID: {ALLOWED_USER_ID}")
-print(f"🔑 Token found: {'Yes' if TOKEN else 'No'}")
+print(f"🌐 Web port: {PORT}")
+
+# Simple HTTP server to satisfy Render's port binding
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        self.wfile.write(b'Bot is running!')
+    
+    def log_message(self, format, *args):
+        pass  # Suppress HTTP logs
+
+def run_http_server():
+    """Run a minimal HTTP server for Render's health checks"""
+    server = HTTPServer(('0.0.0.0', PORT), HealthCheckHandler)
+    print(f"🌐 Health check server running on port {PORT}")
+    server.serve_forever()
 
 # Bot setup
 intents = discord.Intents.default()
@@ -62,13 +80,6 @@ async def on_ready():
     print(f'👤 Authorized User ID: {ALLOWED_USER_ID}')
     print(f'🔗 Bot ID: {bot.user.id}')
     await bot.change_presence(activity=discord.Game(name="🛡️ Security Active"))
-
-@bot.event
-async def on_error(event, *args, **kwargs):
-    """Global error handler"""
-    print(f'❌ Error in {event}:', file=sys.stderr)
-    import traceback
-    traceback.print_exc()
 
 # ============ PASSWORD & HASH TOOLS ============
 
@@ -314,7 +325,7 @@ async def quick_portscan(ctx, target: str, ports: str = "80,443,22,21,25,3306,80
                 results.append(f"❌ Port {port} - CLOSED")
             sock.close()
         except Exception as e:
-            results.append(f"⚠️ Port {port} - ERROR: {str(e)[:50]}")
+            results.append(f"⚠️ Port {port} - ERROR")
     
     embed.description = "\n".join(results)
     embed.set_footer(text="⚠️ Only scan systems you own or have permission to test")
@@ -556,14 +567,19 @@ async def security_menu(ctx):
     
     await ctx.send(embed=embed)
 
-# Run bot with error handling
+# Run bot
 if __name__ == "__main__":
     print("🚀 Starting Discord Security Bot...")
     print("=" * 50)
+    
+    # Start HTTP server in a separate thread for Render
+    http_thread = threading.Thread(target=run_http_server, daemon=True)
+    http_thread.start()
+    
     try:
-        bot.run(TOKEN, log_handler=None)  # Disable default logging to avoid port binding issues
+        bot.run(TOKEN)
     except discord.LoginFailure:
-        print("❌ Invalid Discord token! Check your DISCORD_TOKEN in environment variables.")
+        print("❌ Invalid Discord token! Check your DISCORD_TOKEN.")
         sys.exit(1)
     except Exception as e:
         print(f"❌ Failed to start bot: {e}")
