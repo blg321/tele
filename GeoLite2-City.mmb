@@ -1,0 +1,19 @@
+# One-time download on your local machine
+pip install requests
+
+python3 -c "
+import requests, tarfile
+key = 'YOUR_MAXMIND_LICENSE_KEY'
+url = f'https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key={key}&suffix=tar.gz'
+r = requests.get(url)
+with open('db.tar.gz', 'wb') as f:
+    f.write(r.content)
+with tarfile.open('db.tar.gz', 'r:gz') as tar:
+    for m in tar.getmembers():
+        if m.name.endswith('.mmdb'):
+            m.name = 'GeoLite2-City.mmdb'
+            tar.extract(m, '.')
+            break
+import os; os.remove('db.tar.gz')
+print('Done')
+"
