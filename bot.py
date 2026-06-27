@@ -7,20 +7,40 @@ import string
 import secrets
 import socket
 import ssl
-import ipaddress
-import subprocess
 import urllib.parse
-from datetime import datetime, timedelta
+import sys
+from datetime import datetime
 from collections import Counter
 import discord
-from discord.ext import commands, tasks
+from discord.ext import commands
 from dotenv import load_dotenv
 import asyncio
 
 # Load environment
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
-ALLOWED_USER_ID = int(os.getenv('ALLOWED_USER_ID'))
+ALLOWED_USER_ID = os.getenv('ALLOWED_USER_ID')
+
+# Validate environment variables
+if not TOKEN:
+    print("❌ ERROR: DISCORD_TOKEN not found in environment variables!")
+    print("   Make sure you added it in Render's Environment tab")
+    sys.exit(1)
+
+if not ALLOWED_USER_ID:
+    print("❌ ERROR: ALLOWED_USER_ID not found in environment variables!")
+    print("   Make sure you added it in Render's Environment tab")
+    sys.exit(1)
+
+try:
+    ALLOWED_USER_ID = int(ALLOWED_USER_ID)
+except ValueError:
+    print(f"❌ ERROR: ALLOWED_USER_ID must be a number, got: {ALLOWED_USER_ID}")
+    sys.exit(1)
+
+print(f"✅ Configuration loaded")
+print(f"👤 Allowed User ID: {ALLOWED_USER_ID}")
+print(f"🔑 Token found: {'Yes' if TOKEN else 'No'}")
 
 # Bot setup
 intents = discord.Intents.default()
@@ -40,7 +60,15 @@ def is_allowed_user():
 async def on_ready():
     print(f'🛡️ {bot.user.name} is online and secured!')
     print(f'👤 Authorized User ID: {ALLOWED_USER_ID}')
+    print(f'🔗 Bot ID: {bot.user.id}')
     await bot.change_presence(activity=discord.Game(name="🛡️ Security Active"))
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    """Global error handler"""
+    print(f'❌ Error in {event}:', file=sys.stderr)
+    import traceback
+    traceback.print_exc()
 
 # ============ PASSWORD & HASH TOOLS ============
 
@@ -82,7 +110,6 @@ async def password_generator(ctx, length: int = 16):
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*()_+-=[]{}|;:,.<>?"
     password = ''.join(secrets.choice(alphabet) for _ in range(length))
     
-    # Password strength check
     strength = "🟢 STRONG" if length >= 16 else "🟡 MEDIUM" if length >= 12 else "🔴 WEAK"
     
     embed = discord.Embed(title="🔑 Password Generated", color=discord.Color.green())
@@ -93,7 +120,10 @@ async def password_generator(ctx, length: int = 16):
     
     msg = await ctx.send(embed=embed)
     await asyncio.sleep(30)
-    await msg.delete()
+    try:
+        await msg.delete()
+    except:
+        pass
 
 @bot.command(name='passcheck')
 @is_allowed_user()
@@ -102,7 +132,6 @@ async def password_check(ctx, *, password: str):
     score = 0
     feedback = []
     
-    # Length check
     if len(password) >= 16:
         score += 3
         feedback.append("✅ Excellent length (16+)")
@@ -115,7 +144,6 @@ async def password_check(ctx, *, password: str):
     else:
         feedback.append("❌ Too short (less than 8)")
     
-    # Complexity checks
     if re.search(r'[A-Z]', password):
         score += 1
         feedback.append("✅ Has uppercase")
@@ -140,13 +168,11 @@ async def password_check(ctx, *, password: str):
     else:
         feedback.append("❌ Missing special characters")
     
-    # Common patterns check
     common_patterns = ['123', 'abc', 'qwerty', 'password', 'admin', 'letmein']
     if any(pattern in password.lower() for pattern in common_patterns):
         score -= 2
         feedback.append("❌ Contains common pattern")
     
-    # Strength rating
     if score >= 7:
         strength = "🟢 VERY STRONG"
         color = discord.Color.green()
@@ -262,12 +288,12 @@ async def reverse_dns(ctx, ip: str):
 @bot.command(name='portscan')
 @is_allowed_user()
 async def quick_portscan(ctx, target: str, ports: str = "80,443,22,21,25,3306,8080"):
-    """Quick scan common ports (use responsibly!)"""
+    """Quick scan common ports"""
     port_list = [int(p.strip()) for p in ports.split(',')]
     
     embed = discord.Embed(
         title=f"🔍 Quick Port Scan: {target}",
-        description="Scanning... This may take a moment.",
+        description="Scanning...",
         color=discord.Color.orange()
     )
     msg = await ctx.send(embed=embed)
@@ -287,8 +313,8 @@ async def quick_portscan(ctx, target: str, ports: str = "80,443,22,21,25,3306,80
             else:
                 results.append(f"❌ Port {port} - CLOSED")
             sock.close()
-        except:
-            results.append(f"⚠️ Port {port} - ERROR")
+        except Exception as e:
+            results.append(f"⚠️ Port {port} - ERROR: {str(e)[:50]}")
     
     embed.description = "\n".join(results)
     embed.set_footer(text="⚠️ Only scan systems you own or have permission to test")
@@ -316,7 +342,6 @@ async def ssl_info(ctx, hostname: str, port: int = 443):
                 embed.add_field(name="Organization", value=subject.get('organizationName', 'N/A'), inline=True)
                 embed.add_field(name="Issuer", value=issuer.get('commonName', 'N/A'), inline=True)
                 
-                # Certificate dates
                 not_before = datetime.strptime(cert['notBefore'], '%b %d %H:%M:%S %Y %Z')
                 not_after = datetime.strptime(cert['notAfter'], '%b %d %H:%M:%S %Y %Z')
                 
@@ -331,7 +356,7 @@ async def ssl_info(ctx, hostname: str, port: int = 443):
                 
                 await ctx.send(embed=embed)
     except Exception as e:
-        await ctx.send(f"❌ SSL check failed: {str(e)}")
+        await ctx.send(f"❌ SSL check failed: {str(e)[:200]}")
 
 # ============ TEXT ANALYSIS ============
 
@@ -340,23 +365,19 @@ async def ssl_info(ctx, hostname: str, port: int = 443):
 async def text_analyze(ctx, *, text: str):
     """Analyze text for patterns and statistics"""
     
-    # Character analysis
     char_count = len(text)
     word_count = len(text.split())
     
-    # Character types
     uppercase = sum(1 for c in text if c.isupper())
     lowercase = sum(1 for c in text if c.islower())
     digits = sum(1 for c in text if c.isdigit())
     special = sum(1 for c in text if not c.isalnum() and not c.isspace())
     
-    # Pattern detection
     has_email = bool(re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text))
     has_url = bool(re.search(r'https?://[^\s]+', text))
     has_ip = bool(re.search(r'\b(?:\d{1,3}\.){3}\d{1,3}\b', text))
     has_phone = bool(re.search(r'\b\d{3}[-.]?\d{3}[-.]?\d{4}\b', text))
     
-    # Common character frequencies
     char_freq = Counter(c.lower() for c in text if c.isalpha())
     most_common = char_freq.most_common(5)
     
@@ -370,7 +391,6 @@ async def text_analyze(ctx, *, text: str):
     embed.add_field(name="Digits", value=str(digits), inline=True)
     embed.add_field(name="Special Chars", value=str(special), inline=True)
     
-    # Detected patterns
     patterns = []
     if has_email: patterns.append("📧 Email")
     if has_url: patterns.append("🔗 URL")
@@ -384,15 +404,12 @@ async def text_analyze(ctx, *, text: str):
         freq_str = "\n".join(f"'{char}': {count}x" for char, count in most_common)
         embed.add_field(name="Most Common Letters", value=f"```{freq_str}```", inline=False)
     
-    # Entropy estimation (simple)
     if char_count > 0:
         unique_chars = len(set(text))
         entropy_ratio = unique_chars / char_count * 100
         embed.add_field(name="Unique Characters", value=f"{unique_chars} ({entropy_ratio:.1f}%)", inline=True)
     
     await ctx.send(embed=embed)
-
-# ============ SECURITY UTILITIES ============
 
 @bot.command(name='regex')
 @is_allowed_user()
@@ -425,13 +442,11 @@ async def id_generator(ctx, id_type: str = "uuid"):
         embed.add_field(name="UUID v4", value=f"```{uid}```", inline=False)
     
     elif id_type.lower() == "nano":
-        # Simple nanoid-like generator
         alphabet = string.ascii_letters + string.digits
         nano = ''.join(secrets.choice(alphabet) for _ in range(21))
         embed.add_field(name="Nano ID (21 chars)", value=f"```{nano}```", inline=False)
     
     else:
-        # Custom format
         timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
         random_part = ''.join(secrets.choice(string.hexdigits.lower()) for _ in range(8))
         custom_id = f"{timestamp}-{random_part}"
@@ -442,7 +457,7 @@ async def id_generator(ctx, id_type: str = "uuid"):
 @bot.command(name='tokeninfo')
 @is_allowed_user()
 async def token_analyze(ctx, token: str):
-    """Analyze a potential JWT token (safe viewing)"""
+    """Analyze a potential JWT token"""
     parts = token.split('.')
     
     embed = discord.Embed(title="🔍 Token Analysis", color=discord.Color.orange())
@@ -450,7 +465,6 @@ async def token_analyze(ctx, token: str):
     if len(parts) == 3:
         embed.add_field(name="Type", value="Likely JWT Token", inline=False)
         
-        # Try to decode header (without verification)
         try:
             header = base64.urlsafe_b64decode(parts[0] + '==').decode()
             header_json = json.loads(header)
@@ -458,12 +472,10 @@ async def token_analyze(ctx, token: str):
         except:
             embed.add_field(name="Header", value="Could not decode", inline=False)
         
-        # Try to decode payload
         try:
             payload = base64.urlsafe_b64decode(parts[1] + '==').decode()
             payload_json = json.loads(payload)
             
-            # Check expiration
             if 'exp' in payload_json:
                 exp_time = datetime.fromtimestamp(payload_json['exp'])
                 embed.add_field(name="Expires", value=exp_time.strftime('%Y-%m-%d %H:%M:%S UTC'), inline=True)
@@ -476,7 +488,6 @@ async def token_analyze(ctx, token: str):
     
     else:
         embed.add_field(name="Format", value="Not a standard JWT token", inline=False)
-        # Check if it's a simple base64 string
         try:
             decoded = base64.b64decode(token).decode()
             embed.add_field(name="Decoded", value=f"```{decoded[:200]}```", inline=False)
@@ -545,6 +556,15 @@ async def security_menu(ctx):
     
     await ctx.send(embed=embed)
 
-# Run bot
+# Run bot with error handling
 if __name__ == "__main__":
-    bot.run(TOKEN)
+    print("🚀 Starting Discord Security Bot...")
+    print("=" * 50)
+    try:
+        bot.run(TOKEN, log_handler=None)  # Disable default logging to avoid port binding issues
+    except discord.LoginFailure:
+        print("❌ Invalid Discord token! Check your DISCORD_TOKEN in environment variables.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Failed to start bot: {e}")
+        sys.exit(1)
