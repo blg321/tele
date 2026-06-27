@@ -1,1 +1,3 @@
-python-telegram-bot>=22.2
+pyTelegramBotAPI==4.26.0
+python-dotenv==1.1.0
+geoip2==4.8.1
