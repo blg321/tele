@@ -1,3 +1,4 @@
+import audioop_lts
 import discord
 from discord.ext import commands
 import socket
