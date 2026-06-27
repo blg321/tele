@@ -1,13 +1,11 @@
 services:
   - type: worker
-    name: osint-bot
-    env: docker
-    buildCommand: ""
-    startCommand: ""
+    name: security-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
     envVars:
       - key: DISCORD_TOKEN
         sync: false
-      - key: SHARED_SECRET
-        sync: false
-      - key: ADMIN_ID
+      - key: ALLOWED_USER_ID
         sync: false
