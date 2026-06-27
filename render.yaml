@@ -2,6 +2,7 @@ services:
   - type: worker
     name: security-bot
     env: python
+    region: oregon
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
     envVars:
